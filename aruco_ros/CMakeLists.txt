@@ -6,6 +6,7 @@ find_package(OpenCV REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   dynamic_reconfigure
+  std_msgs
   geometry_msgs
   image_transport
   roscpp
@@ -15,6 +16,9 @@ find_package(catkin REQUIRED COMPONENTS
   aruco_msgs
   sensor_msgs
   visualization_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
 )
 
 generate_dynamic_reconfigure_options(
@@ -26,7 +30,7 @@ add_compile_options(-std=c++11)
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES aruco_ros_utils
-  CATKIN_DEPENDS aruco sensor_msgs tf 
+  CATKIN_DEPENDS aruco sensor_msgs tf tf2
 )
 
 include_directories(
@@ -53,6 +57,12 @@ add_executable(marker_publisher src/marker_publish.cpp
                                 src/aruco_ros_utils.cpp)
 add_dependencies(marker_publisher ${PROJECT_NAME}_gencfg ${catkin_EXPORTED_TARGETS})
 target_link_libraries(marker_publisher ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+
+## Array
+add_executable(single_reference src/single_reference.cpp
+                      src/aruco_ros_utils.cpp)
+add_dependencies(single_reference ${PROJECT_NAME}_gencfg)
+target_link_libraries(single_reference ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 
 #############
 ## Install ##

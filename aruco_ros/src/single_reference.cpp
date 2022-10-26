@@ -43,22 +43,25 @@
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
 #include <aruco_ros/aruco_ros_utils.h>
-#include <visualization_msgs/Marker.h>
+//#include <visualization_msgs/Marker.h>
 #include <dynamic_reconfigure/server.h>
 #include <aruco_ros/ArucoThresholdConfig.h>
 
+#include <cmath>
 #include <std_msgs/String.h>
 #include "geometry_msgs/Pose.h"
 #include "geometry_msgs/Vector3.h"
 #include <geometry_msgs/TransformStamped.h>
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+//#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 #include <tf2_ros/transform_broadcaster.h>
 #include "tf2/buffer_core.h"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+//#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 
-#include <tf2_ros/transform_listener.h>
+//#include <tf2_ros/transform_listener.h>
 #include "include/markerslist.hpp"
 #include "include/markerslist.cpp"
+
+
 
 class ArucoSimple
 {
@@ -73,7 +76,8 @@ private:
   bool cam_info_received;
   image_transport::Publisher image_pub;
   image_transport::Publisher debug_pub;
-  ros::Publisher pose_pub;
+  
+  //ros::Publisher rpy_pub;
   ros::Publisher which_marker_pub;
 
   std::string marker_frame;
@@ -82,6 +86,7 @@ private:
   
   geometry_msgs::PoseStamped poseMsg;
 	std_msgs::String whichMarkerMsg;
+	//geometry_msgs::Vector3 rpyMsg;
 	
   double marker_size;
   int marker_id;
@@ -149,9 +154,9 @@ public:
 
     image_pub = it.advertise("result", 1);
     debug_pub = it.advertise("debug", 1);
-    pose_pub = nh.advertise<geometry_msgs::PoseStamped>("pose_cam", 50);
+    
     which_marker_pub = nh.advertise<std_msgs::String>("which_marker",5);
-    //transform_pub = nh.advertise<geometry_msgs::TransformStamped>("transform", 100);
+    //rpy_pub = nh.advertise<geometry_msgs::Vector3>("rpy", 5);
 
     nh.param<double>("marker_size", marker_size, 0.05);
     nh.param<std::string>("reference_frame", reference_frame, "map");
@@ -184,8 +189,8 @@ public:
     */
 
 		bool match_marker = false;
-    static tf2_ros::TransformBroadcaster tfb;
-    geometry_msgs::TransformStamped transformStamped;
+		static tf2_ros::TransformBroadcaster tfb;
+		geometry_msgs::TransformStamped transformStamped;
     
     if (cam_info_received)
     {
@@ -215,27 +220,33 @@ public:
 							//localize
 							tf2::Transform transform = aruco_ros::arucoMarker2Tf2(markers[i]);
 							
+							//inverse
+							tf2::Transform inv_transform = transform.inverse();
+							
 							marker_frame = MarkersList.getName(j);
 							transformStamped.header.frame_id = marker_frame;
 							transformStamped.child_frame_id = camera_frame;
 							transformStamped.header.stamp = curr_stamp;
 							
-							transformStamped.transform.translation.x = transform.getOrigin().x();
-							transformStamped.transform.translation.y = -1*transform.getOrigin().y();
-	   					transformStamped.transform.translation.z = transform.getOrigin().z();
-	   					transformStamped.transform.rotation.x = transform.getRotation().x();
-							transformStamped.transform.rotation.y = transform.getRotation().y();
-							transformStamped.transform.rotation.z = transform.getRotation().z();
-							transformStamped.transform.rotation.w = transform.getRotation().w();
+							transformStamped.transform.translation.x = -1*inv_transform.getOrigin().x();
+							transformStamped.transform.translation.y = -1*inv_transform.getOrigin().y();
+	   					transformStamped.transform.translation.z = inv_transform.getOrigin().z();
+	   					transformStamped.transform.rotation.x = -1*inv_transform.getRotation().x();
+							transformStamped.transform.rotation.y = -1*inv_transform.getRotation().y();
+							transformStamped.transform.rotation.z = inv_transform.getRotation().z();
+							transformStamped.transform.rotation.w = inv_transform.getRotation().w();
 						
-							whichMarkerMsg = MarkersList.getName(j);			
+							whichMarkerMsg.data = MarkersList.getName(j);			
 							which_marker_pub.publish(whichMarkerMsg);
+							
+							//rpyMsg = euler_from_quaternion(transformStamped.transform.rotation);	//need to edit
+							//rpy_pub.publish(rpyMsg);
 							break;
 						}
 						if(match_marker)
 						{	break;}
 					}
-            
+          
           tfb.sendTransform(transformStamped);
             							
           // but drawing all the detected markers
@@ -278,7 +289,36 @@ public:
       }
     }
   }
+  
+  /************************
+  	QUARTERNION TO EULER
+  *************************/
+  geometry_msgs::Vector3 euler_from_quaternion(geometry_msgs::Quaternion q)
+	{
+        //Convert a quaternion into euler angles (roll, pitch, yaw)
+        //roll is rotation around x in radians (counterclockwise)
+        //pitch is rotation around y in radians (counterclockwise)
+        //yaw is rotation around z in radians (counterclockwise)
+		geometry_msgs::Vector3 v;
+		double t0 = +2.0 * (q.w * q.x + q.y * q.z);
+		double t1 = +1.0 - 2.0 * (q.x * q.x + q.y * q.y);
+		v.x = atan2(t0, t1); //roll
 
+		double t2 = +2.0 * (q.w * q.y - q.z * q.x);
+		
+		if(t2 > 1.0)
+		{ t2 = 1.0;	}
+
+		if(t2 < -1.0)
+		{ t2 = -1.0; }
+		
+		v.y = asin(t2); //pitch
+		double t3 = +2.0 * (q.w * q.z + q.x * q.y);
+    double t4 = +1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+		v.z = atan2(t3, t4); //yaw
+     
+		return v; // in radians
+	}
 
 /***********************************
 	CAM_INFO_CALLBACK
@@ -306,6 +346,12 @@ public:
       ROS_WARN("normalizeImageIllumination is unimplemented!");
     }
   }
+  
+  /*****************************
+  	Inverse matrix
+  *****************************/
+  
+  
 };
 
 /*************************
